@@ -1,0 +1,102 @@
+#version 330 core
+
+in vec3 aPos;
+in vec3 aNormal;
+in vec2 aTexCoord;
+
+out vec4 fragColor;
+
+uniform sampler2D first_texture;
+uniform sampler2D second_texture;
+uniform vec3 viewPos;
+
+struct GlobalLight {
+  vec3 position;
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  float onOffState; //on and off value for global light
+};
+//Added Lamplight structure for spotlight
+struct LampLight {
+  vec3 position;
+  vec3 direction; //direction value added
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  float onOffState; //on and off value for lamp
+  float cutOff1; //cutoff angles for the spotlight
+  float cutOff2;
+};
+
+struct Material {
+  vec3 ambient;
+  vec3 diffuse;
+  vec3 specular;
+  float shininess;
+}; 
+
+//Creating all the lights and materials for shader
+uniform GlobalLight globalLight1;  
+uniform GlobalLight globalLight2;
+uniform LampLight lampLight1;
+uniform LampLight lampLight2;
+uniform Material material;
+
+
+//Spotlight used Joey de Vries tutorial recommended https://learnopengl.com/Lighting/Light-casters
+
+void main() {
+
+  vec3 ambient = globalLight1.ambient * material.ambient * texture(first_texture, aTexCoord).rgb;
+
+  vec3 norm = normalize(aNormal);
+  vec3 lightDir = normalize(globalLight1.position - aPos);  
+  //Multiplied by 0.5 to reduce diffuse component
+  float diff = (max(dot(norm, lightDir), 0.0))*0.5;
+  vec3 diffuse = globalLight1.diffuse * (diff * material.diffuse) * texture(first_texture, aTexCoord).rgb;
+  
+  vec3 viewDir = normalize(viewPos - aPos);
+  vec3 reflectDir = reflect(-lightDir, norm);  
+  //Multiplied by 0.5 to reduce specular component
+  float spec = (pow(max(dot(viewDir, reflectDir), 0.0), material.shininess)*0.5);
+  vec3 specular = globalLight1.specular * (spec * material.specular * vec3(texture(second_texture, aTexCoord)));
+
+
+  //On or Off 
+  float globalLight1State = globalLight1.onOffState;
+  float globalLight2State = globalLight2.onOffState;
+  float lampLight1State = lampLight1.onOffState;
+  float lampLight2State = lampLight2.onOffState;
+
+  //Spotlight from lamp1   
+  lightDir = normalize(lampLight1.position - aPos);  
+  float theta1     = dot(lightDir, normalize(-lampLight1.direction));
+  float epsilon1   = lampLight1.cutOff1 - lampLight1.cutOff2;
+  float intensity1 = clamp((theta1 - lampLight1.cutOff2) / epsilon1, 0.0, 1.0)*5; 
+  
+  //Spotlight for lamp2
+  lightDir = normalize(lampLight2.position - aPos);  
+  float theta2     = dot(lightDir, normalize(-lampLight2.direction));
+  float epsilon2   = lampLight2.cutOff1 - lampLight2.cutOff2;
+  float intensity2 = clamp((theta2 - lampLight2.cutOff2) / epsilon2, 0.0, 1.0)*5; 
+  
+
+  // Scene diffuse - this combines the diffuse values of all the lights and averages them.
+  lightDir = normalize(globalLight1.position - aPos);
+  vec3 sceneDiffuse = (globalLight1State * globalLight1.diffuse * ((diff * material.diffuse) * texture(first_texture, aTexCoord).rgb)) +
+                (globalLight2State * globalLight2.diffuse * ((diff * material.diffuse) * texture(first_texture, aTexCoord).rgb)) +
+                ( intensity1 * lampLight1State * lampLight1.diffuse * ((diff * material.diffuse) * texture(first_texture, aTexCoord).rgb)) +
+                (intensity2 *lampLight2State * lampLight2.diffuse * ((diff * material.diffuse) * texture(first_texture, aTexCoord).rgb));
+
+  // Scene Specular - this combines the specular values of all the lights and averages them
+  vec3 sceneSpecular = (globalLight1State * globalLight1.specular * vec3(texture(second_texture, aTexCoord)) * ((spec * material.specular))) + 
+                  (globalLight2State *globalLight2.specular * vec3(texture(second_texture, aTexCoord)) * ((spec * material.specular))) + 
+                  (lampLight1State * lampLight1.specular * vec3(texture(second_texture, aTexCoord)) * ((spec * material.specular))) + 
+                  (lampLight2State * lampLight2.specular * vec3(texture(second_texture, aTexCoord)) * ((spec * material.specular)));
+
+  //Result
+  //Ambient multiplied by intensity of lights so can be controlled by GUI and is average ofall light ambient values.
+  vec3 result = (ambient * (globalLight1State + globalLight2State + lampLight1State + lampLight2State)/4 ) + (sceneDiffuse*0.5) + (sceneSpecular*0.5);
+  fragColor = vec4(result, 1.0);
+}
